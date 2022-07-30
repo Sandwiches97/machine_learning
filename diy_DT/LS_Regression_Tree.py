@@ -19,11 +19,18 @@ class LeastSquareRegressionTree:
     def _divede(x, y, feature_count):
         # 初始化 loss
         cost = np.zeros((feature_count, len(x)))
+        # eq 5.21
+        for i in range(feature_count):
+            for k in range(len(x)):
 
 
 def main():
     train_X = np.array([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]).T
     y = np.array([4.50, 4.75, 4.91, 5.34, 5.80, 7.05, 7.90, 8.23, 8.70, 9.00])
+
+    model_tree = LeastSquareRegressionTree(train_X, y, 0.2)
+
+
 
 if __name__=="__main__":
     main()
