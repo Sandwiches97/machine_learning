@@ -10,7 +10,7 @@ class LeastSquareRegressionTree:
 
     def _fit(self, x, y, feature_count, epsilon):
         # 选择最优切分点变量 j 与 切分点 s
-        (j, s, minval, c1, c2) = self.divede(x, y, feature_count)
+        (j, s, minval, c1, c2) = self._divede(x, y, feature_count)
 
     def fit(self):
         self.tree = self._fit(self.x, self.y, self.feature_count, self.epsilon)
@@ -22,6 +22,25 @@ class LeastSquareRegressionTree:
         # eq 5.21
         for i in range(feature_count):
             for k in range(len(x)):
+                # k 行 i 列 的特征值
+                value = x[k, i]
+                y1 = y[np.where(x[:, i] <= value)]
+                c1 = np.mean(y1)
+                y2 = y[np.where(x[:, i] > value)]
+                c2 = np.mean(y2)
+                y1[:] = y1[:] - c1
+                y2[:] = y2[:] - c2
+                cost[i, k] = np.sum(y1**2) + np.sum(y2**2)
+        # 选取最优损失误差点
+        cost_index = np.where(cost==np.min(cost))
+        # 选取第几个特征值
+        j = cost_index[0][0]
+        # 选取特征值的切分点
+        s = cost_index[1][0]
+        # 求两个区域的 c1, c2
+        c1 = np.mean(y[np.where(x[:, j] <= x[s, j])])
+        c2 = np.mean(y[np.where(x[:, j] > x[s, j])])
+        return j, s, cost[cost_index], c1, c2
 
 
 def main():
