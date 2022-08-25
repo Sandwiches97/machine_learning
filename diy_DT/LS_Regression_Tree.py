@@ -24,6 +24,8 @@ class LeastSquareRegressionTree:
             for k in range(len(x)):
 
 
+
+
 def main():
     train_X = np.array([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]).T
     y = np.array([4.50, 4.75, 4.91, 5.34, 5.80, 7.05, 7.90, 8.23, 8.70, 9.00])
