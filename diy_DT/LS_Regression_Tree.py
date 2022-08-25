@@ -33,13 +33,15 @@ class LeastSquareRegressionTree:
                 c2 = np.mean(y2)
                 y2[:] = y2[:] - c2
                 # 计算损失
-                cost[i, k] = np.sum(y1**2)+np.sum(y2**2)
+                cost[i, k] = np.sum(y1**2) + np.sum(y2**2)
         # 选择最优损失误差点
         cost_idx = np.where(cost==np.min(cost))
         # 选取最优特征，最优切分点
-        j, s = cost_idx[0][0], cost_idx[0][1]
+        j, s = cost_idx[0][0], cost_idx[1][0]
         # 求两个区域的均值 c1， c2
-
+        c1 = np.mean(y[np.where(x[:, j] <= x[s, j])])
+        c2 = np.mean(y[np.where(x[:, j] > x[s, j])])
+        return j, s, cost[cost_idx], c1, c2
 
 
 def main():
