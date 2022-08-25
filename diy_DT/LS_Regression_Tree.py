@@ -22,46 +22,7 @@ class LeastSquareRegressionTree:
         # eq 5.21
         for i in range(feature_count): # i为特征切割点
             for k in range(len(x)):
-<<<<<<< HEAD
-                # k 行 i 列 的特征值
-                value = x[k, i]
-                y1 = y[np.where(x[:, i] <= value)]
-                c1 = np.mean(y1)
-                y2 = y[np.where(x[:, i] > value)]
-                c2 = np.mean(y2)
-                y1[:] = y1[:] - c1
-                y2[:] = y2[:] - c2
-                cost[i, k] = np.sum(y1**2) + np.sum(y2**2)
-        # 选取最优损失误差点
-        cost_index = np.where(cost==np.min(cost))
-        # 选取第几个特征值
-        j = cost_index[0][0]
-        # 选取特征值的切分点
-        s = cost_index[1][0]
-        # 求两个区域的 c1, c2
-        c1 = np.mean(y[np.where(x[:, j] <= x[s, j])])
-        c2 = np.mean(y[np.where(x[:, j] > x[s, j])])
-        return j, s, cost[cost_index], c1, c2
 
-=======
-                # k行i列 的特征值
-                value = x[k, i]
-                # 计算左子树
-                y1 = y[np.where(x[:, i] <= value)]
-                c1 = np.mean(y1)
-                y1[:] = y1[:] - c1
-                # 计算右子树
-                y2 = y[np.where(x[:, i] > value)]
-                c2 = np.mean(y2)
-                y2[:] = y2[:] - c2
-                # 计算损失
-                cost[i, k] = np.sum(y1**2)+np.sum(y2**2)
-        # 选择最优损失误差点
-        cost_idx = np.where(cost==np.min(cost))
-        # 选取最优特征，最优切分点
-        j, s = cost_idx[0][0], cost_idx[0][1]
-        # 求两个区域的均值 c1， c2
->>>>>>> 123f50c98492bdbb3187bd8acb6d72bb4757dbb9
 
 def main():
     train_X = np.array([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]).T
