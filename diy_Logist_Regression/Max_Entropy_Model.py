@@ -69,3 +69,12 @@ class MaxEntropy:
                 ss += self._w[self._xyID[(x, y)]]
         pyx = math.exp(ss) / zx
         return pyx
+
+    def _model_ep(self, idx):
+        x, y = self._IDxy[idx]
+        ep = 0
+        for sample in self._samples:
+            if x not in sample:
+                continue
+            pyx = self._model_pyx(y, sample)
+            ep += pyx / self._N
