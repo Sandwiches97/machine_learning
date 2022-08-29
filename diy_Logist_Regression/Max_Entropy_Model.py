@@ -35,8 +35,8 @@ class MaxEntropy:
         self._w = [0] *self._num_xy
         self._lastw = self._w[:]
 
-        self._EP_ = [0]*self._num_xy
-        for i, xy in enumerate(self._freqXY): # 计算特征函数 fi 关于经验分布的期望
+        self._EP_ = [0]*self._num_xy # 计算特征函数 fi 关于经验分布的期望
+        for i, xy in enumerate(self._freqXY):
             self._EP_[i] = self._freqXY[xy] / self._Num_Samples
             self._xy2Idx[xy] = i
             self._Idx2xy[i] = xy
