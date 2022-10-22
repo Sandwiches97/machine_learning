@@ -36,6 +36,9 @@ def euclidean_distance(x1, x2):
         distance += pow(x1[i]-x2[i], 2)
     return math.sqrt(distance)
 
+def accuracy_score(y_true, y_pred):
+    return np.sum(y_true==y_pred, axis=0) / len(y_true)
+
 def calculate_covariance_matrix(X, Y=None):
     """ Calculate the covariance matrix for the dataset X """
     if Y is None:
