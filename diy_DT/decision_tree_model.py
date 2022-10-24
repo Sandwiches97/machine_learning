@@ -23,7 +23,7 @@ class DecisionNode():
     """
     def __init__(self, feature_i=None, threshold: int=None,
                  value: int=None, true_branch=None, false_branch=None):
-        self.feature_i = feature_i
+        self.feature_i = feature_i              # 作为评估的特征索引
         self.threshold = threshold
         self.value = value
         self.true_branch = true_branch          # 左子树
@@ -135,10 +135,71 @@ class DecisionTree(object):
         leaf_value = self._leaf_value_calculation(y)
         return DecisionNode(value=leaf_value)
 
-    def predict_value(self, X, tree):
+    def predict_value(self, X, tree: DecisionNode=None):
         """ Do a recursive search down the tree and
         make a predicion of the data sample by the value of the leaf that we end up at
         :param X:
         :param tree:
         :return:
         """
+        if tree is None:
+            return self.root
+
+        # If we have a value (i.e. leaf node) => return value as the prediction
+        if tree.value is not None:
+            return tree.value
+
+        # Choose the feature that we will test
+        feature_value = X[tree.feature_i]
+
+        # Determine if we will follow left or right branch
+        branch = tree.false_branch
+        if isinstance(feature_value, int) or isinstance(feature_value, float):
+            if feature_value >= tree.threshold:
+                branch = tree.true_branch
+        elif feature_value == tree.threshold:
+            branch = tree.true_branch
+
+        # Test subtree
+        return self.predict_value(X, branch)
+
+    def predict(self, X: np.ndarray):
+        """ Classify samples one by one and return the set of labels """
+        y_pred = []
+        for x in X:
+            y_pred.append(self.predict_value(x))
+        return y_pred
+
+    def print_tree(self, tree: DecisionNode=None, indent=" "):
+        """ Recursively print the decision tree """
+        if not tree:
+            tree = self.root
+
+        # If we're at leaf => print the label
+        if tree.value is not None:
+            print(tree.value)
+        # Go deeper down the tree
+        else:
+            # Print test
+            print("%s:%s? "%(tree.feature_i, tree.threshold))
+            # Print the true scenario
+            print("%sT->" % (indent), end="")
+            self.print_tree(tree.true_branch, indent+indent)
+            # Print the false scenario
+            print("%sF->" % (indent), end="")
+            self.print_tree(tree.false_branch, indent+indent)
+
+class ClassificationTree(DecisionTree):
+    def _calculate_information_gain(self, y, y1, y2):
+        # Calculate information gain, 二分类
+        p = len(y1)/len(y)
+        entropy = calculate_entropy(y)
+        info_gain = entropy - p*calculate_entropy(y1) - (1-p)*calculate_entropy(y2)
+        return info_gain
+
+    def _majority_vote(self, y: np.ndarray):
+        most_common = None
+        max_count = 0
+        for label in np.unique(y):
+            # Count number of occurences of samples with label
+            count = len(y[y==label])
