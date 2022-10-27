@@ -203,3 +203,43 @@ class ClassificationTree(DecisionTree):
         for label in np.unique(y):
             # Count number of occurences of samples with label
             count = len(y[y==label])
+            if count > max_count:
+                most_common = label
+                max_count = count
+        return most_common
+
+    def fit(self, X, y):
+        self._impurity_calculation = self._calculate_information_gain
+        self._leaf_value_calculation = self._majority_vote
+        super(ClassificationTree, self).fit(X, y)
+
+class RegressionTree(DecisionTree):
+    def _calculate_variance_reduction(self, y, y1, y2):
+        var_tot = calculate_variance(y)
+        var_1 = calculate_variance(y1)
+        var_2 = calculate_variance(y2)
+        frac_1 = len(y1)/len(y)
+        frac_2 = len(y2)/len(y)
+
+        # Calculate the variance reduction
+        variance_reduction = var_tot - (frac_1*var_1 + frac_2*var_2)
+        return sum(variance_reduction)
+
+    def _mean_of_y(self, y):
+        value = np.mean(y, axis=0)
+        return value if len(value)>1 else value[0]
+
+    def fit(self, X, y):
+        self._leaf_value_calculation = self._mean_of_y
+        self._impurity_calculation = self._calculate_variance_reduction
+        super(RegressionTree, self).fit(X, y)
+
+
+class XGBoostRegressionTree(DecisionTree):
+    """
+    Regression tree for XGBoost
+    - Reference
+    http://xgboost.readthedocs.io/en/latest/model.html
+    """
+    def _split(self, y):
+        pass
