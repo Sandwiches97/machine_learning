@@ -71,8 +71,8 @@ class DecisionTree(object):
     def _build_tree(self, X: np.ndarray, y: np.ndarray, current_depth: int=0):
         """
         递归方法
-        :param X:
-        :param y:
+        :param X:               X.shape = (n_samples, num_of_features)
+        :param y:               y.shape = (n_samples)
         :param current_depth:   树的深度
         :return:                a Decision Node
         """
@@ -98,8 +98,7 @@ class DecisionTree(object):
                 # Iterate through all unique values of feature column i
                 # and calculate the impurity
                 for threshold in unique_values:
-                    # Divide X and y depending on if the feature value of X
-                    # at index feature_i meets the threshold
+                    # 遍历 feature_i 能取到的所有值，作为阈值进行分割
                     Xy1, Xy2 = divide_on_feature(Xy, feature_i, threshold)
 
                     if len(Xy1) > 0 and len(Xy2) > 0:
@@ -125,7 +124,7 @@ class DecisionTree(object):
         if largest_impurity > self.min_impurity:
             # build subtrees for the right and left branches
             true_branch = self._build_tree(best_sets["leftX"], best_sets["lefty"], current_depth+1)
-            false_branch = self._build_tree(best_sets["rightX"], best_sets["lefty"], current_depth+1)
+            false_branch = self._build_tree(best_sets["rightX"], best_sets["righty"], current_depth+1)
             return DecisionNode(feature_i=best_criteria["feature_i"],
                                 threshold=best_criteria["threshold"],
                                 true_branch=true_branch,
@@ -167,7 +166,7 @@ class DecisionTree(object):
         """ Classify samples one by one and return the set of labels """
         y_pred = []
         for x in X:
-            y_pred.append(self.predict_value(x))
+            y_pred.append(self.predict_value(x, self.root))
         return y_pred
 
     def print_tree(self, tree: DecisionNode=None, indent=" "):
