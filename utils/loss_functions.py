@@ -39,6 +39,11 @@ class CrossEntropy(Loss):
         return accuracy_score(np.argmax(y, axis=1), np.argmax(p, axis=1))
 
 class SoftmaxLoss(Loss):
+    """
+     s_i = the i-th value of the output of softmax
+     y_i 是一个 one-hot vector
+     L = - (y_1*log(s_1) + y_2*log(s_2) + ... + y_T*log(s_T)
+    """
     def gradient(self, y, p):
         return y-p
 
