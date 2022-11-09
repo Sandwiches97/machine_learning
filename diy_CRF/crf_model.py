@@ -20,6 +20,21 @@ def sequence_mask(lens: torch.Tensor, max_len: int=None)->torch.Tensor:
     mask = ranges < lens_exp
     return mask
 
+def log_sum_exp(tensor: torch.Tensor, dim:int=0, keepdim:bool=False):
+    """ LogSumExp operation used by CRF.
+
+    :param tensor:
+    :param dim:
+    :param keepdim:
+    :return:
+    """
+    m, _ = tensor.max(dim, keepdim)
+    if keepdim:
+        stable_vec = tensor - m
+    else:
+        stable_vec = tensor - m.unsqueeze(dim)
+    return m + (stable_vec.exp().sum(dim, keepdim=keepdim)).log()
+
 class CRF(nn.Module):
     def __init__(self, label_vocab: Dict[str, int], bioes: bool=False):
         """
@@ -104,7 +119,7 @@ class CRF(nn.Module):
 
 
     @staticmethod
-    def pad_logits(logits: torch.Tensor)->torch.Tensor:
+    def pad_logits(logits: torch.FloatTensor)->torch.FloatTensor:
         """ 辅助 paddling 方法
         Padding the output of linear layer with <SOS> and <EOS> scores.
         经过这个变化，bert的logits就可以与CRF中的转移矩阵对应了
@@ -132,7 +147,7 @@ class CRF(nn.Module):
         # A tensor of size batch_size * (seq_len + 2),
         labels_ext = labels.new_empty((batch_size, seq_len + 2))
         labels_ext[:, 0] = self.start
-        labels_ext[:, -1, -1] = labels
+        labels_ext[:, 1:-1] = labels
         mask = sequence_mask(lens+1, max_len=(seq_len + 2)).long()
         pad_stop = labels.new_full((1, ), self.end, requires_grad=False)
         pad_stop = pad_stop.unsqueeze(-1).expand(batch_size, seq_len + 2)
@@ -155,8 +170,8 @@ class CRF(nn.Module):
         trn_row = torch.gather(trn_exp, 1, lbl_rexp)
 
         # 4. from_label 的得分计算
-        lbl_lexp = labels[:, :, -1].unsqueeze(-1)           # (batch, seq_len+1, 1)
-        trn_scr = torch.gather(trn_row, 1, lbl_lexp)        # (batch, seq_len+1, 1)
+        lbl_lexp = labels[:, :-1].unsqueeze(-1)           # (batch, seq_len+1, 1)
+        trn_scr = torch.gather(trn_row, 2, lbl_lexp)        # (batch, seq_len+1, 1)
         trn_scr = trn_scr.squeeze(-1)                       # (batch, seq_len+1)
 
         # 5. mask 掉 seq_len 维度上的 start，注意不是 mask 掉 num_labels 上的 start
@@ -166,7 +181,7 @@ class CRF(nn.Module):
         return score
 
 
-    def calc_unary_score(self, logits: torch.Tensor, labels: torch.Tensor, lens)->torch.Tensor:
+    def calc_unary_score(self, logits: torch.FloatTensor, labels: torch.Tensor, lens: torch.Tensor)->torch.Tensor:
         """ 计算发射得分，就是取出：每个位置上的正确状态（真实label）的概率值
 
         :param logits:  (batch, seq_len, num_label + 2)，概率分布
@@ -182,7 +197,7 @@ class CRF(nn.Module):
         return scores
 
 
-    def calc_gold_score(self, logits, labels, lens):
+    def calc_gold_score(self, logits: torch.FloatTensor, labels: torch.Tensor, lens: torch.Tensor):
         """ 计算真实得分
 
         :param logits:  (batch, seq_len, num_label + 2)
@@ -194,61 +209,151 @@ class CRF(nn.Module):
         binary_score = self.calc_binary_score(labels, lens).sum(1).squeeze(-1)
         return unary_score + binary_score
 
-    def calc_norm_score(self, logits, lens):
-        """ 获取正确得分
+    def calc_norm_score(self, logits: torch.FloatTensor, lens: torch.IntTensor):
+        """ 计算所有路径的得分
 
-        :param logits:
-        :param lens:
+        :param logits:  (batch, seq_len, num_label + 2)
+        :param lens:    (batch)
         :return:
         """
         pass
         batch_size, _, _ = logits.size()
+        # 生成一个（batch，num_label+2）的-100 矩阵 alpha
         alpha = logits.new_full((batch_size, self.label_size), -100.0)
         alpha[:, self.start] = 0
+        lens_ = lens.clone()
+
+        logits_t = logits.transpose(1, 0)   # (seq_len, batch, num_label + 2)
+        for logit in logits_t:              # 遍历每一个 seq step
+            # 新增一个维度，并复制 num_labels+2 份
+            logit_exp = logit.unsqueeze(-1).expand(batch_size,
+                                                   self.label_size,
+                                                   self.label_size)
+            alpha_exp = alpha.unsqueeze(-1).expand(batch_size,
+                                                   self.label_size,
+                                                   self.label_size)
+            trans_exp = self.transition.unsqueeze(0).expand_as(alpha_exp)
+            # 状态转移，每一个 step 的得分 = 上一步的score + 状态score + 转移score
+            mat = logit_exp + alpha_exp + trans_exp
+            # 为下一步的transition生成 prev 矩阵
+            alpha_nxt = log_sum_exp(mat, 2).squeeze(-1)     # (batch, num_labels+2)
+
+            mask = (lens_>0).float().unsqueeze(-1).expand_as(alpha)
+            alpha = mask * alpha_nxt + (1-mask)*alpha
+            lens_ = lens_ - 1
+        # 所有 token 遍历完后，加结束位
+        alpha = alpha + self.transition[self.end].unsqueeze(0).expand_as(alpha)
+        norm = log_sum_exp(alpha, 1).squeeze(-1)
+
+        return norm
 
 
-
-
-    def loglik(self, logits: torch.Tensor, labels: torch.Tensor, lens):
-        """ 计算损失
-
-        :param logits:
-        :param labels:
-        :param lens:
+    def loglik(self, logits: torch.FloatTensor, labels: torch.Tensor, lens):
+        """ 计算损失 Loss = -log(Prob)
+                         = log(Σ_i e^{P_i}) - P_real
+        :param logits:  (batch, seq_len, num_label + 2)
+        :param labels:  (batch, seq_len)
+        :param lens:    (batch)
         :return:
         """
-        norm_score = self.calc_norm_score(logits, lens)
-        gold_score = self.calc_gold_score(logits, labels, lens)
+        norm_score = self.calc_norm_score(logits, lens)         # 总分数
+        gold_score = self.calc_gold_score(logits, labels, lens) # P_real
         return gold_score - norm_score
 
     # viterbi
-    def viterbi_decode(self, logits, lens):
+    def viterbi_decode(self, logits: torch.FloatTensor, lens: torch.Tensor):
         """ pass
 
-        :param logits:
-        :param lens:
+        :param logits:  (batch, seq_len, num_label + 2)
+        :param lens:    (batch)
         :return:
         """
+        batch_size, _, n_labels = logits.size()
+        vit = logits.new_full((batch_size, self.label_size), -100.0)  # (batch, num_labels)形状的全-100
+        vit[:, self.start] = 0  # vit是动态规划中的状态转移，记录所有路径得分
+        c_lens = lens.clone()
+
+        logits_t = logits.transpose(1, 0)  # (seq_len, batch, num_labels)
+        pointers = []  # 记录每一个step的label中对应的上一步的最大分
+        for logit in logits_t:
+            # 仍然是在seq_len的维度上进行遍历
+            vit_exp = vit.unsqueeze(1).expand(batch_size, n_labels, n_labels)  # (batch, num_labels, num_labels)
+            trn_exp = self.transition.unsqueeze(0).expand_as(vit_exp)  # 相同形状的转移分
+            vit_trn_sum = vit_exp + trn_exp
+            vt_max, vt_argmax = vit_trn_sum.max(2)  # 在from的维度上求最大
+
+            vt_max = vt_max.squeeze(-1)  # 删除求最值时作废的维度
+            vit_nxt = vt_max + logit  # 为下一个step做准备
+            pointers.append(vt_argmax.squeeze(-1).unsqueeze(0))  # 当前step的所有label各自对应的上一step的最大分
+
+            mask = (c_lens > 0).float().unsqueeze(-1).expand_as(vit_nxt)  # 每走一步，剩下的部分的有效mask就会少一个
+            vit = mask * vit_nxt + (1 - mask) * vit
+
+            mask = (c_lens == 1).float().unsqueeze(-1).expand_as(vit_nxt)
+            vit += mask * self.transition[self.end].unsqueeze(  # mask掉padding部分
+                0).expand_as(vit_nxt)
+
+            c_lens = c_lens - 1  # 对mask生效
+
+        pointers = torch.cat(pointers)
+        scores, idx = vit.max(1)  # 在to_label上求最大以找到得分最高的路径
+        paths = [idx.unsqueeze(1)]  # 删除求最值时作废的维度
+        for argmax in reversed(pointers):
+            idx_exp = idx.unsqueeze(-1)
+            idx = torch.gather(argmax, 1, idx_exp)
+            idx = idx.squeeze(-1)
+
+            paths.insert(0, idx.unsqueeze(1))
+
+        paths = torch.cat(paths[1:], 1)
+        scores = scores.squeeze(-1)
+
+        return scores, paths
 
 
 if __name__=="__main__":
     bert = AutoModel.from_pretrained("albert-base-v2")
     tokenizer = AutoTokenizer.from_pretrained("albert-base-v2")
     num_hiddens = 768
-    num_labels = 20
+    # BIO 方式标注 or BIOES 方式
+    # {B-begin 开始, I-inside 中间, O-outside 其他, E-end 结尾, S-single 单个字符}
+    vocab = {"O": 0,
+             "B-PER": 1, "I-PER": 2, "E-PER": 3,
+             "B-ORG": 4, "I-ORG": 5, "E-ORG": 6}
+    num_labels = len(vocab)
+    entity_type_num = num_labels    # 实体类型总数
+    label_idxs = torch.tensor([list(range(0, 8, 2))])
+    token_nums = torch.tensor([4])  # (batch, )
 
     text = "your text here."
+    real_labels = torch.zeros(size=(6, ), dtype=torch.long)
+    real_labels[1:-1] = label_idxs.squeeze(0)
     inputs = tokenizer(text, return_tensors='pt')
     bert_out = bert(inputs['input_ids'], attention_mask=inputs["attention_mask"])[0]
     print(bert_out.shape)                       # (batch size, seq_len, num_hiddens)
 
     # 用一个线性层将 num_hiddens 降维成 状态空间
     label_ffn = nn.Linear(num_hiddens, num_labels, bias=True)
-    label_score = label_ffn(bert_out)           # (batch size, seq_len, vocab_size)
+    label_scores = label_ffn(bert_out)           # (batch size, seq_len, vocab_size)
                                                 # 每一个token对于状态的概率分布情况
 
-    vocab = {}
+    # 用于计算loss
+    label_scores_softmax = label_scores.softmax(dim=2)
+    label_scores_softmax = label_scores_softmax.view(-1, entity_type_num)
+
+    # CRF 部分
     crf = CRF(vocab)
-    label_score = crf.pad_logits(label_score)   # (batch size, seq_len, vocab_size+2)
+    label_scores = crf.pad_logits(label_scores)   # (batch size, seq_len, vocab_size+2)
 
+    # bert 的损失函数
+    bert_criteria = nn.CrossEntropyLoss()
+    bert_loss = bert_criteria(label_scores_softmax, real_labels)
 
+    # crf 的损失函数
+    crf_loglik = crf.loglik(label_scores,
+                            label_idxs,
+                            token_nums)
+    crf_loss = crf_loglik
+
+    # 总的损失
+    total_loss = bert_loss - crf_loss.mean()
