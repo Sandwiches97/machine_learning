@@ -38,8 +38,8 @@ class GBDT(object):
         True or false depending on if we're doing regression or classification.
     """
 
-    def __init__(self, n_estimators, learning_rate, min_samples_split,
-                 min_impurity, max_depth, regression: bool):
+    def __init__(self, n_estimators: int, learning_rate: float, min_samples_split: int,
+                 min_impurity: float, max_depth: int, regression: bool):
         self.n_estimators = n_estimators
         self.learning_rate = learning_rate
         self.min_samples_split = min_samples_split
@@ -72,5 +72,37 @@ class GBDT(object):
 
     def predict(self, X):
         y_pred = self.trees[0].predict(X)
-
+        for i in range(1, self.n_estimators):
+            y_pred -= np.multiply(self.learning_rate, self.trees[i].predict(X))
+            
+        if not self.regression:
+            # Trun into probaility distribution
+            y_pred = np.exp(y_pred) / np.expand_dims(np.sum(np.exp(y_pred), axis=1), axis=1)
+            # Set label to the value that maximizes probability
+            y_pred = np.argmax(y_pred, axis=1)
+        return y_pred
+    
+class GBDTRegressor(GBDT):
+    def __init__(self, n_estimator: int=200, learning_rate: int=0.5, min_samples_split: int=2,
+                 min_var_red: float=1e-7, max_depth: int=4, debug: bool=False):
+        super(GBDTRegressor, self).__init__(n_estimators=n_estimator,
+                                            learning_rate=learning_rate,
+                                            min_samples_split=min_samples_split, 
+                                            min_impurity=min_var_red,
+                                            max_depth=max_depth,
+                                            regression=True)
+        
+class GBDTClassifier(GBDT):
+    def __init__(self, n_estimator: int=200, learning_rate: int=0.5, min_samples_split: int=2,
+                 min_info_gain: float=1e-7, max_depth: int=4, debug: bool=False):
+        super(GBDTClassifier, self).__init__(n_estimators=n_estimator,
+                                            learning_rate=learning_rate,
+                                            min_samples_split=min_samples_split, 
+                                            min_impurity=min_info_gain,
+                                            max_depth=max_depth,
+                                            regression=False)
+    
+    def fit(self, X, y):
+        y = to_categorical(y)
+        super(GBDTClassifier, self).fit(X, y)
 
