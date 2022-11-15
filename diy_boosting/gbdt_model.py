@@ -39,7 +39,7 @@ class GBDT(object):
     """
 
     def __init__(self, n_estimators, learning_rate, min_samples_split,
-                 min_impurity, max_depth, regression):
+                 min_impurity, max_depth, regression: bool):
         self.n_estimators = n_estimators
         self.learning_rate = learning_rate
         self.min_samples_split = min_samples_split
@@ -52,7 +52,7 @@ class GBDT(object):
 
         self.loss = SquareLoss()
         if not self.regression:
-            self.loss = SoftmaxLoss
+            self.loss = SoftmaxLoss()
 
         # 分类问题也是用回归树，利用残差去学习概率
         self.trees = []
@@ -67,3 +67,10 @@ class GBDT(object):
         y_pred = self.trees[0].predict(X)
         for i in self.bar(range(1, self.n_estimators)):
             gradient = self.loss.gradient(y, y_pred)
+            self.trees[i].fit(X, gradient)
+            y_pred -= np.multiply(self.learning_rate, self.trees[i].predict(X))
+
+    def predict(self, X):
+        y_pred = self.trees[0].predict(X)
+
+
